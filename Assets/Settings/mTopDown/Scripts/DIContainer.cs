@@ -7,8 +7,9 @@ namespace DI
     {
         private readonly DIContainer _parentContainer;
         private readonly Dictionary<(string, Type), DIRegistration> _registrations = new();
+        private readonly HashSet<(string, Type)> _resoulutions = new();
 
-        public DIContainer(DIContainer parentContainer) 
+        public DIContainer(DIContainer parentContainer = null) 
         {
             _parentContainer = parentContainer;
         }
@@ -54,6 +55,47 @@ namespace DI
                 Instance = instance,
                 IsSingleton = true
             };
+        }
+
+        public T Resolve<T>(string tag = null)
+        {
+            var key = (tag, typeof(T));
+
+            if (_resoulutions.Contains(key))
+            {
+                throw new Exception($"Cyclic dependency for tag {tag} and type {key.Item2.FullName}");
+            }
+
+            _resoulutions.Add(key);
+
+            try
+            {
+                if (_registrations.TryGetValue(key, out var registration))
+                {
+                    if (registration.IsSingleton)
+                    {
+                        if (registration.Instance == null && registration.Factory != null)
+                        {
+                            registration.Instance = registration.Factory(this);
+                        }
+
+                        return (T)registration.Instance;
+                    }
+
+                    return (T)registration.Factory(this);
+                }
+
+                if (_parentContainer != null)
+                {
+                    return _parentContainer.Resolve<T>(tag);
+                }
+            }
+            finally 
+            {
+                _resoulutions.Remove(key);
+            }
+
+            throw new Exception($"Couldn't find dependency for tag {tag} and type {key.Item2.FullName}");
         }
 
         private void Registor<T>((string, Type) key, Func<DIContainer, T> factory, bool isSingleton)
